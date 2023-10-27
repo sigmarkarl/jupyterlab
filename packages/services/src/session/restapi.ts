@@ -100,16 +100,37 @@ export async function startSession(
   settings: ServerConnection.ISettings = ServerConnection.makeSettings()
 ): Promise<Session.IModel> {
   const url = URLExt.join(settings.baseUrl, SESSION_SERVICE_URL);
-  const init = {
+  const body = JSON.stringify(options)
+  const bodyjson = JSON.parse(body);
+  bodyjson["session_id"] = "";
+  let init = {
     method: 'POST',
-    body: JSON.stringify(options)
+    body: JSON.stringify(bodyjson)
   };
-  const response = await ServerConnection.makeRequest(url, init, settings);
-  if (response.status !== 201) {
-    const err = await ServerConnection.ResponseError.create(response);
+  let data = {"id": "waiting", "session_id": ""};
+  let count = 0
+  while (count++ < 600) {
+    const response = await ServerConnection.makeRequest(url, init, settings);
+    if (response.status !== 201) {
+      const err = await ServerConnection.ResponseError.create(response);
+      throw err;
+    }
+    data = await response.json();
+    if (data.id != "waiting") {
+      break;
+    } else {
+      bodyjson["session_id"] = data.session_id;
+      init = {
+        method: 'POST',
+        body: JSON.stringify(bodyjson)
+      };
+      setTimeout(() => console.log("Waiting for kernel"), 1000)
+    }
+  }
+  if (count >= 600) {
+    const err = new Error("10 minute timeout waiting for kernel to start");
     throw err;
   }
-  const data = await response.json();
   updateLegacySessionModel(data);
   validateModel(data);
   return data;
